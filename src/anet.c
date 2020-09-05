@@ -58,20 +58,27 @@ static void anetSetError(char *err, const char *fmt, ...)
     va_end(ap);
 }
 
+/*
+ * 将 fd 设置为非阻塞模式（O_NONBLOCK）
+ */
 int anetSetBlock(char *err, int fd, int non_block) {
     int flags;
 
     /* Set the socket blocking (if non_block is zero) or non-blocking.
      * Note that fcntl(2) for F_GETFL and F_SETFL can't be
      * interrupted by a signal. */
+    // 设置socket的I/O 模式。
+    // 注意，F_GETFL和F_SETFL的fcntl（2）不能被信号中断。
     if ((flags = fcntl(fd, F_GETFL)) == -1) {
         anetSetError(err, "fcntl(F_GETFL): %s", strerror(errno));
         return ANET_ERR;
     }
-
+    // 若non_block非0
     if (non_block)
+        // 非阻塞模式
         flags |= O_NONBLOCK;
     else
+        // 阻塞模式
         flags &= ~O_NONBLOCK;
 
     if (fcntl(fd, F_SETFL, flags) == -1) {
@@ -92,6 +99,9 @@ int anetBlock(char *err, int fd) {
 /* Set TCP keep alive option to detect dead peers. The interval option
  * is only used for Linux as we are using Linux-specific APIs to set
  * the probe send time, interval, and count. */
+// 设置TCP keep alive选项以检测失活节点。
+// interval选项仅用于Linux，因为Redis使用的是Linux特定的API来
+// 设置探测发送时间，间隔和计数
 int anetKeepAlive(char *err, int fd, int interval)
 {
     int val = 1;
@@ -106,8 +116,11 @@ int anetKeepAlive(char *err, int fd, int interval)
     /* Default settings are more or less garbage, with the keepalive time
      * set to 7200 by default on Linux. Modify settings to make the feature
      * actually useful. */
+    // Linux上的keepalive time默认设为7200，默认设置或多或少是垃圾。
+    // 修改设置以使功能真正有用。 * /
 
     /* Send first probe after interval. */
+    // 间隔后发送第一个探测
     val = interval;
     if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &val, sizeof(val)) < 0) {
         anetSetError(err, "setsockopt TCP_KEEPIDLE: %s\n", strerror(errno));
@@ -117,6 +130,8 @@ int anetKeepAlive(char *err, int fd, int interval)
     /* Send next probes after the specified interval. Note that we set the
      * delay as interval / 3, as we send three probes before detecting
      * an error (see the next setsockopt call). */
+    // 在指定时间间隔后发送下一个探测。注意Redis将延迟设置为 interval / 3，
+    // 因为我们在检测到错误之前发送了三个探测
     val = interval/3;
     if (val == 0) val = 1;
     if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &val, sizeof(val)) < 0) {
@@ -126,6 +141,7 @@ int anetKeepAlive(char *err, int fd, int interval)
 
     /* Consider the socket in error state after three we send three ACK
      * probes without getting a reply. */
+    // 我们发送了三个ACK探测而没有得到答复，考虑处于错误状态
     val = 3;
     if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &val, sizeof(val)) < 0) {
         anetSetError(err, "setsockopt TCP_KEEPCNT: %s\n", strerror(errno));
@@ -138,6 +154,9 @@ int anetKeepAlive(char *err, int fd, int interval)
     return ANET_OK;
 }
 
+/*
+ * Nagle 算法的开关
+ */
 static int anetSetTcpNoDelay(char *err, int fd, int val)
 {
     if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val)) == -1)

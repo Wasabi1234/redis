@@ -772,26 +772,39 @@ typedef struct client {
     uint64_t id;            /* Client incremental unique ID. */
     connection *conn;
     int resp;               /* RESP protocol version. Can be 2 or 3. */
+    // 当前正在使用的db
     redisDb *db;            /* Pointer to currently SELECTed DB. */
+    // 客户端名称
     robj *name;             /* As set by CLIENT SETNAME. */
+    // 查询缓冲区
     sds querybuf;           /* Buffer we use to accumulate client queries. */
     size_t qb_pos;          /* The position we have read in querybuf. */
     sds pending_querybuf;   /* If this client is flagged as master, this buffer
                                represents the yet not applied portion of the
                                replication stream that we are receiving from
                                the master. */
+    // 查询缓冲区长度峰值
     size_t querybuf_peak;   /* Recent (100ms or more) peak of querybuf size. */
+    // 参数数量
     int argc;               /* Num of arguments of current command. */
+    // 当前命令的参数数组
     robj **argv;            /* Arguments of current command. */
+    // 记录被客户端执行的命令
     struct redisCommand *cmd, *lastcmd;  /* Last command executed. */
     user *user;             /* User associated with this connection. If the
                                user is set to NULL the connection can do
                                anything (admin). */
+    // 请求类型：内联还是多条命令
     int reqtype;            /* Request protocol type: PROTO_REQ_* */
+    // 剩余未读取的命令内容数量
     int multibulklen;       /* Number of multi bulk arguments left to read. */
+    // 命令内容的长度
     long bulklen;           /* Length of bulk argument in multi bulk request. */
+    // 回复链表
     list *reply;            /* List of reply objects to send to the client. */
+    // 回复链表中对象的总大小
     unsigned long long reply_bytes; /* Tot bytes of objects in reply list. */
+    // 已发送字节，处理 short write 用
     size_t sentlen;         /* Amount of bytes already sent in the current
                                buffer or object being sent. */
     time_t ctime;           /* Client creation time. */
@@ -1162,6 +1175,7 @@ struct redisServer {
     /* Configuration */
     int verbosity;                  /* Loglevel in redis.conf */
     int maxidletime;                /* Client timeout in seconds */
+    // 是否开启 SO_KEEPALIVE 选项
     int tcpkeepalive;               /* Set SO_KEEPALIVE if non-zero. */
     int active_expire_enabled;      /* Can be disabled for testing purposes. */
     int active_expire_effort;       /* From 1 (default) to 10, active effort. */

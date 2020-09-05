@@ -76,6 +76,7 @@ struct connection {
     ConnectionCallbackFunc conn_handler;
     ConnectionCallbackFunc write_handler;
     ConnectionCallbackFunc read_handler;
+    // socket描述符
     int fd;
 };
 
@@ -157,6 +158,13 @@ static inline int connSetWriteHandler(connection *conn, ConnectionCallbackFunc f
 
 /* Register a read handler, to be called when the connection is readable.
  * If NULL, the existing handler is removed.
+ */
+/**
+ * 注册一个读取处理程序，当连接可读时将调用该处理程序。
+ * 如果为NULL，则删除现有处理程序
+ * @param conn
+ * @param func
+ * @return
  */
 static inline int connSetReadHandler(connection *conn, ConnectionCallbackFunc func) {
     return conn->type->set_read_handler(conn, func);

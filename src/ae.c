@@ -150,6 +150,10 @@ void aeStop(aeEventLoop *eventLoop) {
     eventLoop->stop = 1;
 }
 
+/*
+ * 根据 mask 参数值，监听 fd 文件状态，
+ * 当 fd 可用时，执行 proc 函数
+ */
 int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
         aeFileProc *proc, void *clientData)
 {
@@ -157,14 +161,19 @@ int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
         errno = ERANGE;
         return AE_ERR;
     }
+    // 取出文件事件结构
     aeFileEvent *fe = &eventLoop->events[fd];
 
+    // 监听指定 fd 的指定事件
     if (aeApiAddEvent(eventLoop, fd, mask) == -1)
         return AE_ERR;
+    // 设置文件事件类型及事件的处理器
     fe->mask |= mask;
     if (mask & AE_READABLE) fe->rfileProc = proc;
     if (mask & AE_WRITABLE) fe->wfileProc = proc;
+    // 私有数据
     fe->clientData = clientData;
+    // 越界时，更新事件处理器的最大 fd
     if (fd > eventLoop->maxfd)
         eventLoop->maxfd = fd;
     return AE_OK;
@@ -370,8 +379,13 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
 
 /* Process every pending time event, then every pending file event
  * (that may be registered by time event callbacks just processed).
+ * 处理所有已到达的时间事件，以及所有已就绪的文件事件
+ * （可以通过刚刚处理的时间事件回调进行注册）。
+ *
  * Without special flags the function sleeps until some file event
  * fires, or when the next time event occurs (if any).
+ * 如果不传入特殊 flags，那么函数睡眠直到文件事件就绪，
+ * 或下个时间事件到达（若有）。
  *
  * If flags is 0, the function does nothing and returns.
  * if flags has AE_ALL_EVENTS set, all the kind of events are processed.
@@ -394,12 +408,15 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
      * file events to process as long as we want to process time
      * events, in order to sleep until the next time event is ready
      * to fire. */
+    // 即使不存在要处理的时间事件（只要要处理时间事件）
+    // 也要调用select（），以便进入睡眠状态直到下次事件准备就绪为止
     if (eventLoop->maxfd != -1 ||
         ((flags & AE_TIME_EVENTS) && !(flags & AE_DONT_WAIT))) {
         int j;
         aeTimeEvent *shortest = NULL;
         struct timeval tv, *tvp;
 
+        // 获取最近的时间事件
         if (flags & AE_TIME_EVENTS && !(flags & AE_DONT_WAIT))
             shortest = aeSearchNearestTimer(eventLoop);
         if (shortest) {
@@ -533,9 +550,13 @@ int aeWait(int fd, int mask, long long milliseconds) {
     }
 }
 
+/*
+ * 事件处理器的主循环
+ */
 void aeMain(aeEventLoop *eventLoop) {
     eventLoop->stop = 0;
     while (!eventLoop->stop) {
+        // 开始处理事件
         aeProcessEvents(eventLoop, AE_ALL_EVENTS|
                                    AE_CALL_BEFORE_SLEEP|
                                    AE_CALL_AFTER_SLEEP);

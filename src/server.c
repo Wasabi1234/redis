@@ -1827,10 +1827,9 @@ void checkChildrenDone(void) {
     }
 }
 
-/* This is our timer interrupt, called server.hz times per second.
- * Here is where we do a number of things that need to be done asynchronously.
- * For instance:
- *
+/*
+ * Redis 的时钟中断，每秒调用 server.hz 次。
+ * 以下是需要异步执行的操作：
  * - Active expired keys collection (it is also performed in a lazy way on
  *   lookup).
  * - Software watchdog.
@@ -1844,6 +1843,11 @@ void checkChildrenDone(void) {
  * Everything directly called here will be called server.hz times per second,
  * so in order to throttle execution of things we want to do less frequently
  * a macro is used: run_with_period(milliseconds) { .... }
+ *
+ * 因为 serverCron 函数中的所有代码都会每秒调用 server.hz 次，
+ * 为了对部分代码的调用次数进行限制，
+ * 使用了一个宏 run_with_period(milliseconds) { ... } ，
+ * 这个宏可以将被包含代码的执行次数降低为每 milliseconds 执行一次。
  */
 
 int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
@@ -2885,6 +2889,7 @@ void initServer(void) {
 
     /* Create an event handler for accepting new connections in TCP and Unix
      * domain sockets. */
+    // 为 TCP 连接关联连接应答处理器，以接受并应答客户端的 connect() 调用
     for (j = 0; j < server.ipfd_count; j++) {
         if (aeCreateFileEvent(server.el, server.ipfd[j], AE_READABLE,
             acceptTcpHandler,NULL) == AE_ERR)

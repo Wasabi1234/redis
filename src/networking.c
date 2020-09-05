@@ -86,18 +86,34 @@ void linkClient(client *c) {
     raxInsert(server.clients_index,(unsigned char*)&id,sizeof(id),c,NULL);
 }
 
+/*
+ * 创建一个新客户端
+ */
 client *createClient(connection *conn) {
+    // 分配空间
     client *c = zmalloc(sizeof(client));
 
     /* passing NULL as conn it is possible to create a non connected client.
      * This is useful since all the commands needs to be executed
      * in the context of a client. When commands are executed in other
      * contexts (for instance a Lua script) we need a non connected client. */
+    // 传递NULL作为conn可以创建未连接的客户端。
+    // 这很有用，因为所有命令都需要在客户端的上下文中执行。
+    // 在其他上下文中（例如Lua脚本）执行命令时，我们需要一个未连接的客户端。
+    // 原先的 fd 已被封装入 conn 结构。
+    // 若 conn 非0，创建带网络连接的客户端
+    //    conn -1 ，创建无网络连接的伪客户端
+    // 因Redis命令必须在客户端的上下文中使用，所以在执行 Lua 环境中的命令时
+    // 需要用到该伪终端
     if (conn) {
+        // 设为非阻塞模式
         connNonBlock(conn);
+        // 禁用 Nagle 算法
         connEnableTcpNoDelay(conn);
+        // 设置 keep alive
         if (server.tcpkeepalive)
             connKeepAlive(conn,server.tcpkeepalive);
+        // 绑定读事件到事件 loop （开始接收命令请求）
         connSetReadHandler(conn, readQueryFromClient);
         connSetPrivateData(conn, c);
     }
@@ -198,22 +214,31 @@ void clientInstallWriteHandler(client *c) {
 
 /* This function is called every time we are going to transmit new data
  * to the client. The behavior is the following:
+ * 该函数在每次向客户端发数据时被调用。行为如下：
  *
  * If the client should receive new data (normal clients will) the function
  * returns C_OK, and make sure to install the write handler in our event
  * loop so that when the socket is writable new data gets written.
+ * 当客户端可接收新数据时，函数返回 REDIS_OK ，
+ * 并将写处理器安装到事件循环中，这样当socket可写时，新数据就会被写入。
  *
  * If the client should not receive new data, because it is a fake client
  * (used to load AOF in memory), a master or because the setup of the write
  * handler failed, the function returns C_ERR.
- *
+ * 对于那些不应该接收新数据的客户端，比如：
+ *  伪客户端、 master 以及 未 ONLINE 的 slave ，或者写处理器安装失败时，
+ * 函数返回 C_ERR 。
  * The function may return C_OK without actually installing the write
  * event handler in the following cases:
+ * 在以下情况下，该函数可能不真地安装write事件处理程序而返回C_OK：
  *
  * 1) The event handler should already be installed since the output buffer
  *    already contains something.
+ *    由于输出缓冲区已包含某些内容，因此应该已经安装了事件处理程序。
  * 2) The client is a slave but not yet online, so we want to just accumulate
  *    writes in the buffer but not actually sending them yet.
+ *    客户端是从节点，但尚未联机
+ *    因此我们只想在缓冲区中累积写操作，而实际上尚未发送它们。
  *
  * Typically gets called every time a reply is built, before adding more
  * data to the clients output buffers. If the function returns C_ERR no
@@ -221,6 +246,7 @@ void clientInstallWriteHandler(client *c) {
 int prepareClientToWrite(client *c) {
     /* If it's the Lua client we always return ok without installing any
      * handler since there is no socket at all. */
+    // LUA 脚本环境所使用的伪客户端总是可写的
     if (c->flags & (CLIENT_LUA|CLIENT_MODULE)) return C_OK;
 
     /* CLIENT REPLY OFF / SKIP handling: don't send replies. */
@@ -228,6 +254,7 @@ int prepareClientToWrite(client *c) {
 
     /* Masters don't receive replies, unless CLIENT_MASTER_FORCE_REPLY flag
      * is set. */
+    // 主节点一般也是不接受查询
     if ((c->flags & CLIENT_MASTER) &&
         !(c->flags & CLIENT_MASTER_FORCE_REPLY)) return C_ERR;
 
@@ -235,9 +262,11 @@ int prepareClientToWrite(client *c) {
 
     /* Schedule the client to write the output buffers to the socket, unless
      * it should already be setup to do so (it has already pending data). */
+    // 调度客户端将输出缓冲区写入socket，除非应该已被设置为这样做（它已经有未决数据）。
     if (!clientHasPendingReplies(c)) clientInstallWriteHandler(c);
 
     /* Authorize the caller to queue in the output buffer of this client. */
+    // 授权调用方在此客户端的输出缓冲区中排队
     return C_OK;
 }
 
@@ -956,6 +985,9 @@ static void acceptCommonHandler(connection *conn, int flags, char *ip) {
     }
 }
 
+/*
+ * 创建一个 TCP 连接处理器
+ */
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     int cport, cfd, max = MAX_ACCEPTS_PER_CALL;
     char cip[NET_IP_STR_LEN];
@@ -964,6 +996,7 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     UNUSED(privdata);
 
     while(max--) {
+        // accept 客户端连接
         cfd = anetTcpAccept(server.neterr, fd, cip, sizeof(cip), &cport);
         if (cfd == ANET_ERR) {
             if (errno != EWOULDBLOCK)
@@ -972,6 +1005,7 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
             return;
         }
         serverLog(LL_VERBOSE,"Accepted %s:%d", cip, cport);
+        // 为客户端创建客户端状态（redisClient）
         acceptCommonHandler(connCreateAcceptedSocket(cfd),0,cip);
     }
 }
@@ -1892,6 +1926,9 @@ void processInputBuffer(client *c) {
     }
 }
 
+/*
+ * 读取客户端的查询缓冲区内容
+ */
 void readQueryFromClient(connection *conn) {
     client *c = connGetPrivateData(conn);
     int nread, readlen;
@@ -1899,8 +1936,11 @@ void readQueryFromClient(connection *conn) {
 
     /* Check if we want to read from the client later when exiting from
      * the event loop. This is the case if threaded I/O is enabled. */
+    // 校验是否从事件循环退出时稍后，再从客户端读取；
+    // 若启用线程I/O，就是这种情况。
     if (postponeClientRead(c)) return;
 
+    // 读入长度（默认为 16 MB）
     readlen = PROTO_IOBUF_LEN;
     /* If this is a multi bulk request, and we are processing a bulk reply
      * that is large enough, try to maximize the probability that the query
@@ -1908,6 +1948,10 @@ void readQueryFromClient(connection *conn) {
      * at the risk of requiring more read(2) calls. This way the function
      * processMultiBulkBuffer() can avoid copying buffers to create the
      * Redis Object representing the argument. */
+    // 如果这是一个多批量请求，并且我们正在处理一个足够大的批量答复，
+    // 请尝试最大程度地提高查询缓冲区准确包含表示该对象的SDS字符串的可能性，
+    // 甚至可能需要更多read（2）调用。这样processMultiBulkBuffer（）函数
+    // 可以避免复制缓冲区以创建代表参数的Redis对象
     if (c->reqtype == PROTO_REQ_MULTIBULK && c->multibulklen && c->bulklen != -1
         && c->bulklen >= PROTO_MBULK_BIG_ARG)
     {

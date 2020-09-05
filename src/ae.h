@@ -47,13 +47,18 @@
                            things to disk before sending replies, and want
                            to do that in a group fashion. */
 
+// 文件事件
 #define AE_FILE_EVENTS (1<<0)
+// 时间事件
 #define AE_TIME_EVENTS (1<<1)
+// 所有事件
 #define AE_ALL_EVENTS (AE_FILE_EVENTS|AE_TIME_EVENTS)
+// 不阻塞，也不等待
 #define AE_DONT_WAIT (1<<2)
 #define AE_CALL_BEFORE_SLEEP (1<<3)
 #define AE_CALL_AFTER_SLEEP (1<<4)
 
+/* 决定时间事件是否要持续执行的标识 */
 #define AE_NOMORE -1
 #define AE_DELETED_EVENT_ID -1
 
@@ -68,23 +73,35 @@ typedef int aeTimeProc(struct aeEventLoop *eventLoop, long long id, void *client
 typedef void aeEventFinalizerProc(struct aeEventLoop *eventLoop, void *clientData);
 typedef void aeBeforeSleepProc(struct aeEventLoop *eventLoop);
 
-/* File event structure */
+/* File event structure 文件事件结构 */
 typedef struct aeFileEvent {
+    // 监听事件类型掩码：
+    // 值选项 AE_READABLE、AE_WRITABLE、AE_BARRIER
     int mask; /* one of AE_(READABLE|WRITABLE|BARRIER) */
+    // 读事件处理器
     aeFileProc *rfileProc;
+    // 写事件处理器
     aeFileProc *wfileProc;
+    // 多路复用库的私有数据
     void *clientData;
 } aeFileEvent;
 
 /* Time event structure */
+// 时间事件结构
 typedef struct aeTimeEvent {
-    long long id; /* time event identifier. */
+    // 时间事件的唯一标识符
+    long long id;
+    // 事件的到达时间，记录应该在什么时间点执行事件处理函数
     long when_sec; /* seconds */
     long when_ms; /* milliseconds */
+    // 事件处理函数
     aeTimeProc *timeProc;
+    // 事件释放函数
     aeEventFinalizerProc *finalizerProc;
+    // 多路复用库的私有数据
     void *clientData;
     struct aeTimeEvent *prev;
+    // 指向下个时间事件结构，形成链表
     struct aeTimeEvent *next;
     int refcount; /* refcount to prevent timer events from being
   		   * freed in recursive time event calls. */
